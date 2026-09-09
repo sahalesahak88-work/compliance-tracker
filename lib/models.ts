@@ -211,6 +211,60 @@ export function deleteUser(id: string): void {
   db.prepare(`DELETE FROM users WHERE id = ?`).run(id);
 }
 
+// ---------- Password reset queries ----------
+
+export interface PasswordReset {
+  id: string;
+  userId: string;
+  tokenHash: string;
+  expiresAt: string;
+  usedAt: string | null;
+  createdAt: string;
+}
+
+// Any outstanding (unused) reset row for this user is marked used
+// before issuing a new one, so requesting a fresh link invalidates
+// old links from the same request flow instead of leaving several
+// valid links outstanding at once.
+export function createPasswordReset(data: {
+  userId: string;
+  tokenHash: string;
+  expiresAt: string;
+}): PasswordReset {
+  db.prepare(
+    `UPDATE password_resets SET usedAt = datetime('now') WHERE userId = ? AND usedAt IS NULL`
+  ).run(data.userId);
+
+  const id = randomUUID();
+  db.prepare(
+    `INSERT INTO password_resets (id, userId, tokenHash, expiresAt)
+     VALUES (?, ?, ?, ?)`
+  ).run(id, data.userId, data.tokenHash, data.expiresAt);
+  return getPasswordResetById(id)!;
+}
+
+export function getPasswordResetById(id: string): PasswordReset | undefined {
+  const row = db.prepare(`SELECT * FROM password_resets WHERE id = ?`).get(id);
+  return row ? (JSON.parse(JSON.stringify(row)) as PasswordReset) : undefined;
+}
+
+// Only returns a row that is unused and not yet expired — a match on
+// tokenHash alone isn't enough, since an already-used or stale link
+// should behave exactly like an unrecognized one to the caller.
+export function getValidPasswordReset(tokenHash: string): PasswordReset | undefined {
+  const row = db
+    .prepare(
+      `SELECT * FROM password_resets
+       WHERE tokenHash = ? AND usedAt IS NULL AND datetime(expiresAt) > datetime('now')`
+    )
+    .get(tokenHash);
+  return row ? (JSON.parse(JSON.stringify(row)) as PasswordReset) : undefined;
+}
+
+export function markPasswordResetUsed(id: string): void {
+  db.prepare(`UPDATE password_resets SET usedAt = datetime('now') WHERE id = ?`).run(id);
+}
+
 // ---------- License queries ----------
 
 export function createLicense(

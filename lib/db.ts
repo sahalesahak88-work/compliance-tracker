@@ -13,6 +13,16 @@ import { randomUUID } from "crypto";
 const dbPath = path.join(process.cwd(), "dev.db");
 const db = new DatabaseSync(dbPath);
 
+// WAL mode lets one process write while others read/wait instead of
+// immediately throwing "database is locked" — matters because Next.js
+// build spawns several parallel workers, and every route file that
+// imports lib/db.ts opens this same file concurrently. busy_timeout
+// gives a writer a grace period (5s) to wait for a lock to clear
+// rather than failing on the first collision, which is what was
+// happening during `next build` on Windows with many workers.
+db.exec("PRAGMA journal_mode = WAL");
+db.exec("PRAGMA busy_timeout = 5000");
+
 // Enable foreign key constraints (off by default in SQLite)
 db.exec("PRAGMA foreign_keys = ON");
 
@@ -74,6 +84,22 @@ db.exec(`
     name TEXT NOT NULL,
     createdAt TEXT NOT NULL DEFAULT (datetime('now')),
     FOREIGN KEY (clinicId) REFERENCES clinics(id) ON DELETE CASCADE
+  );
+
+  -- Forgot-password flow. We never store the raw token — only a
+  -- sha256 hash of it (see lib/auth.ts hashResetToken) — so a leaked
+  -- database row alone can't be used to reset anyone's password.
+  -- Rows are never deleted; a used or superseded row just gets
+  -- usedAt set, which is enough for getValidPasswordReset to reject
+  -- it and gives us a paper trail if this ever needs auditing.
+  CREATE TABLE IF NOT EXISTS password_resets (
+    id TEXT PRIMARY KEY,
+    userId TEXT NOT NULL,
+    tokenHash TEXT NOT NULL UNIQUE,
+    expiresAt TEXT NOT NULL,
+    usedAt TEXT,
+    createdAt TEXT NOT NULL DEFAULT (datetime('now')),
+    FOREIGN KEY (userId) REFERENCES users(id) ON DELETE CASCADE
   );
 `);
 
