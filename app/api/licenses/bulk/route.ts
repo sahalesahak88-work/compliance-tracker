@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getAuthenticatedClinic } from "@/lib/session";
+import { getAuthenticatedClinic, getRequestActor } from "@/lib/session";
 import { createLicenses, LICENSE_OPTIONAL_FIELDS, type LicenseOptionalField } from "@/lib/models";
 import { CATEGORY_TYPES, getCategoryType } from "@/lib/categoryTypes";
 
@@ -75,7 +75,7 @@ export async function POST(req: NextRequest) {
     valid.push(entry);
   });
 
-  const created = valid.length > 0 ? createLicenses(clinic.id, valid) : [];
+  const created = valid.length > 0 ? createLicenses(clinic.id, valid, getRequestActor(req)) : [];
 
   return NextResponse.json({ created, errors });
 }

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getAuthenticatedClinic } from "@/lib/session";
+import { getAuthenticatedClinic, getRequestActor } from "@/lib/session";
 import { createLicense, getLicensesForClinic, LICENSE_OPTIONAL_FIELDS } from "@/lib/models";
 import { getCategoryType } from "@/lib/categoryTypes";
 
@@ -58,12 +58,15 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  const license = createLicense({
-    clinicId: clinic.id,
-    name,
-    expiryDate,
-    ...optionalData,
-  });
+  const license = createLicense(
+    {
+      clinicId: clinic.id,
+      name,
+      expiryDate,
+      ...optionalData,
+    },
+    getRequestActor(req)
+  );
 
   return NextResponse.json(license);
 }

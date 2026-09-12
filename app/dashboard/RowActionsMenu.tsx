@@ -3,9 +3,11 @@
 import { useEffect, useRef, useState } from "react";
 
 export default function RowActionsMenu({
+  onView,
   onEdit,
   onDelete,
 }: {
+  onView?: () => void;
   onEdit: () => void;
   onDelete: () => void;
 }) {
@@ -37,6 +39,17 @@ export default function RowActionsMenu({
       </button>
       {open && (
         <div className="absolute right-0 mt-1 w-36 bg-surface border border-line rounded-lg shadow-lg py-1 z-20">
+          {onView && (
+            <button
+              onClick={() => {
+                onView();
+                setOpen(false);
+              }}
+              className="w-full text-left px-3 py-2 text-[13px] text-ink hover:bg-paper"
+            >
+              View details
+            </button>
+          )}
           <button
             onClick={() => {
               onEdit();

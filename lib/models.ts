@@ -265,6 +265,49 @@ export function markPasswordResetUsed(id: string): void {
   db.prepare(`UPDATE password_resets SET usedAt = datetime('now') WHERE id = ?`).run(id);
 }
 
+// ---------- License history ----------
+
+export interface LicenseHistoryEntry {
+  id: string;
+  licenseId: string;
+  action: "created" | "updated" | "renewed";
+  changes: string | null; // JSON string of { field: { from, to } }
+  userId: string | null;
+  userName: string | null;
+  createdAt: string;
+}
+
+// `actor` is best-effort attribution — routes pass it when the
+// caller's token resolves to a specific user (getAuthenticatedUser),
+// and omit it for an old pre-multi-user token. Either way the entry
+// still gets recorded; it just shows "Someone on the team" instead
+// of a name when actor is missing (see the detail page).
+function recordLicenseHistory(
+  licenseId: string,
+  action: LicenseHistoryEntry["action"],
+  changes: Record<string, { from: unknown; to: unknown }> | null,
+  actor?: { id: string; name: string } | null
+): void {
+  db.prepare(
+    `INSERT INTO license_history (id, licenseId, action, changes, userId, userName)
+     VALUES (?, ?, ?, ?, ?, ?)`
+  ).run(
+    randomUUID(),
+    licenseId,
+    action,
+    changes ? JSON.stringify(changes) : null,
+    actor?.id ?? null,
+    actor?.name ?? null
+  );
+}
+
+export function getLicenseHistory(licenseId: string): LicenseHistoryEntry[] {
+  const rows = db
+    .prepare(`SELECT * FROM license_history WHERE licenseId = ? ORDER BY createdAt DESC`)
+    .all(licenseId);
+  return JSON.parse(JSON.stringify(rows)) as LicenseHistoryEntry[];
+}
+
 // ---------- License queries ----------
 
 export function createLicense(
@@ -272,7 +315,8 @@ export function createLicense(
     clinicId: string;
     name: string;
     expiryDate: string;
-  } & Partial<Record<LicenseOptionalField, string | null>>
+  } & Partial<Record<LicenseOptionalField, string | null>>,
+  actor?: { id: string; name: string } | null
 ): License {
   const id = randomUUID();
 
@@ -291,6 +335,8 @@ export function createLicense(
     `INSERT INTO licenses (${columns.join(", ")}) VALUES (${placeholders})`
   ).run(...(values as (string | null)[]));
 
+  recordLicenseHistory(id, "created", null, actor);
+
   return getLicenseById(id)!;
 }
 
@@ -301,13 +347,14 @@ export function createLicenses(
   rows: ({
     name: string;
     expiryDate: string;
-  } & Partial<Record<LicenseOptionalField, string | null>>)[]
+  } & Partial<Record<LicenseOptionalField, string | null>>)[],
+  actor?: { id: string; name: string } | null
 ): License[] {
   const created: License[] = [];
   db.exec("BEGIN");
   try {
     for (const row of rows) {
-      created.push(createLicense({ clinicId, ...row }));
+      created.push(createLicense({ clinicId, ...row }, actor));
     }
     db.exec("COMMIT");
   } catch (err) {
@@ -333,28 +380,60 @@ export function getLicensesForClinic(clinicId: string): License[] {
 
 export function updateLicense(
   id: string,
-  data: Partial<{ name: string; expiryDate: string } & Record<LicenseOptionalField, string | null>>
+  data: Partial<{ name: string; expiryDate: string } & Record<LicenseOptionalField, string | null>>,
+  actor?: { id: string; name: string } | null
 ): void {
   const fields = Object.keys(data);
   if (fields.length === 0) return;
+
+  // Diff against the current row before writing, so the history
+  // entry only lists fields whose value actually changed — a PATCH
+  // that resends a field's existing value shouldn't show up as a
+  // change in the timeline.
+  const before = getLicenseById(id);
+  const changes: Record<string, { from: unknown; to: unknown }> = {};
+  if (before) {
+    for (const f of fields) {
+      const from = (before as unknown as Record<string, unknown>)[f];
+      const to = (data as Record<string, unknown>)[f];
+      if (from !== to) changes[f] = { from, to };
+    }
+  }
+
   const setClause = fields.map((f) => `${f} = ?`).join(", ");
   const values = fields.map((f) => (data as Record<string, unknown>)[f]);
   db.prepare(
     `UPDATE licenses SET ${setClause}, updatedAt = datetime('now') WHERE id = ?`
   ).run(...(values as (string | number | null)[]), id);
+
+  if (Object.keys(changes).length > 0) {
+    recordLicenseHistory(id, "updated", changes, actor);
+  }
 }
 
 // Renewing a license means: give it a new expiry date and clear the
 // 90/60/30/7-day reminder flags so the email reminder script treats
 // it as a fresh countdown instead of thinking those reminders were
 // already sent for the old expiry date.
-export function renewLicense(id: string, newExpiryDate: string): void {
+export function renewLicense(
+  id: string,
+  newExpiryDate: string,
+  actor?: { id: string; name: string } | null
+): void {
+  const before = getLicenseById(id);
   db.prepare(
     `UPDATE licenses
      SET expiryDate = ?, updatedAt = datetime('now'),
          reminded90 = 0, reminded60 = 0, reminded30 = 0, reminded7 = 0
      WHERE id = ?`
   ).run(newExpiryDate, id);
+
+  recordLicenseHistory(
+    id,
+    "renewed",
+    { expiryDate: { from: before?.expiryDate ?? null, to: newExpiryDate } },
+    actor
+  );
 }
 
 export function deleteLicense(id: string): void {

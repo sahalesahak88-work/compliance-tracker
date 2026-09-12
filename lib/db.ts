@@ -101,6 +101,29 @@ db.exec(`
     createdAt TEXT NOT NULL DEFAULT (datetime('now')),
     FOREIGN KEY (userId) REFERENCES users(id) ON DELETE CASCADE
   );
+
+  -- Renewal/edit history for the per-item detail page. One row per
+  -- meaningful action (create/update/renew) rather than per raw SQL
+  -- UPDATE, so a PATCH that changes nothing doesn't create noise.
+  -- 'changes' is a JSON string of { field: { from, to } } for
+  -- update/renew rows, and null for the initial create row. 'userId'/
+  -- 'userName' are best-effort: routes attach them when the caller's
+  -- token resolves to a specific user (see getAuthenticatedUser),
+  -- and both stay null for an old pre-multi-user token -- the history
+  -- entry itself still gets recorded either way. 'userName' is a
+  -- snapshot taken at the time of the action (not a live join to
+  -- 'users') so the log stays readable even if that person is later
+  -- removed from the team.
+  CREATE TABLE IF NOT EXISTS license_history (
+    id TEXT PRIMARY KEY,
+    licenseId TEXT NOT NULL,
+    action TEXT NOT NULL,
+    changes TEXT,
+    userId TEXT,
+    userName TEXT,
+    createdAt TEXT NOT NULL DEFAULT (datetime('now')),
+    FOREIGN KEY (licenseId) REFERENCES licenses(id) ON DELETE CASCADE
+  );
 `);
 
 // Migration: add the `category` column for any dev.db created before

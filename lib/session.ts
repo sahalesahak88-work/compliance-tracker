@@ -41,3 +41,14 @@ export function getAuthenticatedUser(
 
   return { user, clinic };
 }
+
+// Best-effort actor info for history/audit logging — a thin wrapper
+// around getAuthenticatedUser that returns just the {id, name} shape
+// recordLicenseHistory wants, or null for an old pre-multi-user
+// token. Never used for authorization (routes still call
+// getAuthenticatedClinic for that, per the note above) — only to
+// label who did something in a history entry when we can tell.
+export function getRequestActor(req: NextRequest): { id: string; name: string } | null {
+  const resolved = getAuthenticatedUser(req);
+  return resolved ? { id: resolved.user.id, name: resolved.user.name } : null;
+}

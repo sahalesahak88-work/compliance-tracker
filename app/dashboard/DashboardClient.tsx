@@ -2,6 +2,7 @@
 
 import { useState, useMemo, useRef } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import type { Clinic, License, Category } from "@/lib/models";
 import NotificationBanner from "./NotificationBanner";
 import CalendarView from "./CalendarView";
@@ -1125,7 +1126,9 @@ export default function DashboardClient({
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2.5 flex-wrap">
                         <p className="text-[15px] font-medium text-ink leading-tight">
-                          {license.name}
+                          <Link href={`/licenses/${license.id}`} className="hover:text-brand hover:underline">
+                            {license.name}
+                          </Link>
                         </p>
                         <span
                           className={`text-[11.5px] font-semibold px-2 py-[3px] rounded-full tabular-nums ${risk.badgeBg} ${risk.badgeText} shrink-0`}
@@ -1161,6 +1164,7 @@ export default function DashboardClient({
                         Checklist
                       </button>
                       <RowActionsMenu
+                        onView={() => router.push(`/licenses/${license.id}`)}
                         onEdit={() => startEdit(license)}
                         onDelete={() => requestDelete(license.id)}
                       />

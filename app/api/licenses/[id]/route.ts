@@ -1,12 +1,31 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getAuthenticatedClinic } from "@/lib/session";
+import { getAuthenticatedClinic, getRequestActor } from "@/lib/session";
 import {
   getLicenseById,
   updateLicense,
   deleteLicense,
+  getLicenseHistory,
   LICENSE_OPTIONAL_FIELDS,
 } from "@/lib/models";
 import { getCategoryType } from "@/lib/categoryTypes";
+
+export async function GET(
+  req: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const clinic = getAuthenticatedClinic(req);
+  if (!clinic) {
+    return NextResponse.json({ error: "Not authenticated." }, { status: 401 });
+  }
+
+  const { id } = await params;
+  const license = getLicenseById(id);
+  if (!license || license.clinicId !== clinic.id) {
+    return NextResponse.json({ error: "License not found." }, { status: 404 });
+  }
+
+  return NextResponse.json({ license, history: getLicenseHistory(id) });
+}
 
 export async function PATCH(
   req: NextRequest,
@@ -58,7 +77,7 @@ export async function PATCH(
     }
   }
 
-  updateLicense(id, update);
+  updateLicense(id, update, getRequestActor(req));
   return NextResponse.json(getLicenseById(id));
 }
 

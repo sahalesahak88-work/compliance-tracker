@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getAuthenticatedClinic } from "@/lib/session";
+import { getAuthenticatedClinic, getRequestActor } from "@/lib/session";
 import { getLicenseById, renewLicense } from "@/lib/models";
 
 export async function POST(
@@ -24,6 +24,6 @@ export async function POST(
     return NextResponse.json({ error: "A valid new expiry date is required." }, { status: 400 });
   }
 
-  renewLicense(id, expiryDate);
+  renewLicense(id, expiryDate, getRequestActor(req));
   return NextResponse.json(getLicenseById(id));
 }
